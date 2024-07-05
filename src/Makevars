@@ -1,0 +1,2 @@
+PKG_LDFLAGS=-L/usr/local/lib
+PKG_LIBS=-lumfpack -lamd -lcblas

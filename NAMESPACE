@@ -1,0 +1,4 @@
+useDynLib(sparselu)
+export(sparseLU)
+import(Rcpp)
+
