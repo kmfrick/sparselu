@@ -1,9 +1,7 @@
-..Rcheck
-R/RcppExports.R
-man
-sparselu.Rcheck
 sparselu_0.1.0.tar.gz
-src/RcppExports.cpp
-src/RcppExports.o
-src/sparselu.o
-src/sparselu.so
+.Rhistory
+.RData
+sparselu.Rcheck
+src/*.o
+src/*.so
+*.tar.gz

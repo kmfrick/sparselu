@@ -1,3 +1,7 @@
+#' @useDynLib sparselu, .registration = TRUE
+#' @import Rcpp
+NULL
+
 #' Sparse LU Decomposition
 #'
 #' This function performs LU decomposition on a sparse matrix represented
@@ -26,4 +30,3 @@
 sparseLU <- function(Ap, Ai, Ax) {
   .Call('_sparselu_sparseLU', Ap, Ai, Ax)
 }
-

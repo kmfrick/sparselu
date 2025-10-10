@@ -1,4 +1,3 @@
-useDynLib(sparselu)
+useDynLib(sparselu, .registration = TRUE)
 export(sparseLU)
 import(Rcpp)
-
