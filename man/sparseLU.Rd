@@ -15,6 +15,9 @@ sparseLU(Ap, Ai, Ax)
 \value{
 A named list with components \code{L}, \code{U}, \code{P}, and \code{Q} describing the LU factorisation returned by UMFPACK.
 }
+\details{
+The column pointers \code{Ap} and row indices \code{Ai} must use zero-based indexing as required by the SuiteSparse UMFPACK interface.
+}
 \examples{
 Ap <- c(0L, 2L, 3L, 5L)
 Ai <- c(0L, 2L, 1L, 0L, 2L)

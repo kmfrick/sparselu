@@ -2,7 +2,6 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <vector>
-#include <iostream>
 
 // [[Rcpp::export]]
 Rcpp::List sparseLU(const std::vector<int> &Ap, const std::vector<int> &Ai, const std::vector<double> &Ax) {
@@ -116,4 +115,3 @@ Rcpp::NumericVector sparseLU_solve(const std::vector<int> &Ap, const std::vector
   return Rcpp::wrap(x);
 
 }
-

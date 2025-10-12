@@ -1,7 +1,127 @@
 #!/bin/sh
-# Configure script to ensure Rcpp attributes are generated before compilation.
 
-echo "Running Rcpp::compileAttributes() ..."
-"${R_HOME}/bin/Rscript" --vanilla -e "if (requireNamespace('Rcpp', quietly = TRUE)) Rcpp::compileAttributes()" || exit 1
+PKG_CPPFLAGS_DEFAULT=""
+PKG_LIBS_DEFAULT=""
+have_header="no"
+
+PRINTF_BIN=$(command -v printf)
+SED_BIN=$(command -v sed)
+
+if [ -z "$PRINTF_BIN" ] || [ -z "$SED_BIN" ]; then
+  echo "configure: required tools printf and sed were not found." >&2
+  exit 1
+fi
+
+have_pkg_config="no"
+if command -v pkg-config >/dev/null 2>&1; then
+  if pkg-config --exists umfpack; then
+    have_pkg_config="yes"
+    PKG_CPPFLAGS_DEFAULT="$(pkg-config --cflags-only-I umfpack 2>/dev/null)"
+    PKG_LIBS_DEFAULT="$(pkg-config --libs umfpack 2>/dev/null)"
+  fi
+fi
+
+if [ "$have_pkg_config" != "yes" ]; then
+  search_paths=""
+  have_header="no"
+  incdir=""
+  libdir=""
+
+  if [ -n "$SUITESPARSE_HOME" ]; then
+    search_paths="$search_paths $SUITESPARSE_HOME"
+  fi
+
+  if [ -n "$PREFIX" ]; then
+    search_paths="$search_paths $PREFIX"
+  fi
+
+  search_paths="$search_paths /usr /usr/local /opt/homebrew /opt/local"
+
+  for prefix in $search_paths; do
+    if [ -z "$prefix" ]; then
+      continue
+    fi
+    if [ -f "$prefix/include/suitesparse/umfpack.h" ]; then
+      have_header="yes"
+      incdir="$prefix/include"
+      if [ -d "$prefix/lib" ]; then
+        libdir="$prefix/lib"
+      fi
+      break
+    fi
+  done
+
+  if [ "$have_header" = "yes" ]; then
+    if [ -n "$incdir" ]; then
+      if [ -z "$PKG_CPPFLAGS_DEFAULT" ]; then
+        PKG_CPPFLAGS_DEFAULT="-I$incdir"
+      else
+        PKG_CPPFLAGS_DEFAULT="$PKG_CPPFLAGS_DEFAULT -I$incdir"
+      fi
+    fi
+    if [ -n "$libdir" ]; then
+      PKG_LIBS_DEFAULT="-L$libdir"
+    fi
+  fi
+
+  if [ -n "$PKG_LIBS_DEFAULT" ]; then
+    PKG_LIBS_DEFAULT="$PKG_LIBS_DEFAULT -lumfpack -lamd -lsuitesparseconfig"
+  fi
+fi
+
+if [ -n "$PKG_CPPFLAGS" ]; then
+  PKG_CPPFLAGS_EFFECTIVE="$PKG_CPPFLAGS"
+else
+  PKG_CPPFLAGS_EFFECTIVE="$PKG_CPPFLAGS_DEFAULT"
+fi
+
+if [ -n "$PKG_LIBS" ]; then
+  PKG_LIBS_EFFECTIVE="$PKG_LIBS"
+else
+  PKG_LIBS_EFFECTIVE="$PKG_LIBS_DEFAULT"
+fi
+
+if [ -z "$PKG_LIBS_EFFECTIVE" ]; then
+  cat <<EOF >&2
+configure: error: Unable to determine SuiteSparse/UMFPACK linker flags.
+Set the environment variables PKG_LIBS or SUITESPARSE_HOME before installing,
+or make sure pkg-config can find the 'umfpack' module.
+EOF
+  exit 1
+fi
+
+if [ "$have_pkg_config" != "yes" ] && [ "$have_header" != "yes" ] && [ -z "$PKG_CPPFLAGS" ]; then
+  cat <<EOF >&2
+configure: error: UMFPACK headers were not found. Set SUITESPARSE_HOME or PKG_CPPFLAGS.
+EOF
+  exit 1
+fi
+
+MAKEVARS_IN="src/Makevars.in"
+MAKEVARS_OUT="src/Makevars"
+
+if [ ! -f "$MAKEVARS_IN" ]; then
+  echo "configure: template $MAKEVARS_IN not found." >&2
+  exit 1
+fi
+
+escape_sed() {
+  $PRINTF_BIN '%s' "$1" | $SED_BIN -e 's/[\/&]/\\&/g'
+}
+
+PKG_CPPFLAGS_ESCAPED=$(escape_sed "$PKG_CPPFLAGS_EFFECTIVE")
+PKG_LIBS_ESCAPED=$(escape_sed "$PKG_LIBS_EFFECTIVE")
+
+$SED_BIN \
+  -e "s/@PKG_CPPFLAGS@/$PKG_CPPFLAGS_ESCAPED/g" \
+  -e "s/@PKG_LIBS@/$PKG_LIBS_ESCAPED/g" \
+  "$MAKEVARS_IN" > "$MAKEVARS_OUT"
+
+if [ $? -ne 0 ]; then
+  echo "configure: failed to write $MAKEVARS_OUT" >&2
+  exit 1
+fi
+
+echo "configure: created $MAKEVARS_OUT with SuiteSparse flags."
 
 exit 0

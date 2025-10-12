@@ -2,6 +2,8 @@ sparselu_0.1.0.tar.gz
 .Rhistory
 .RData
 sparselu.Rcheck
+..Rcheck
 src/*.o
 src/*.so
+src/Makevars
 *.tar.gz

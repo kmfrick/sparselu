@@ -6,9 +6,14 @@ Authors@R: c(person("Kevin Michael", "Frick", role = c("aut", "cre"), email = "k
            person("Timothy A.", "Davis", role = "ctb",
 	         comment = c(affiliation = "SuiteSparse Project",
 	                     contribution = "SuiteSparse libraries and collaborators listed in dir(system.file(\"doc\", \"SuiteSparse\", package = \"Matrix\"), pattern = \"License\", full.names = TRUE, recursive = TRUE)")))
+Author: Kevin Michael Frick [aut, cre], Timothy A. Davis [ctb]
+Maintainer: Kevin Michael Frick <kmfrick@proton.me>
 Description: Provides an interface to the SuiteSparse LU factorisation routines for sparse matrices stored in compressed column format.
 License: GPL-3
+Depends: R (>= 3.6.0)
 LinkingTo: Rcpp
-SystemRequirements: SuiteSparse
+SystemRequirements: SuiteSparse (UMFPACK, AMD, SuiteSparse_config)
 Imports: Rcpp (>= 0.11.0)
+Encoding: UTF-8
+OS_type: unix
 RoxygenNote: 7.3.2
