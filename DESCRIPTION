@@ -1,7 +1,7 @@
 Package: sparselu
 Type: Package
 Title: Sparse LU Decomposition via SuiteSparse
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: c(person("Kevin Michael", "Frick", role = c("aut", "cre"), email = "kmfrick@proton.me"),
            person("Timothy A.", "Davis", role = "ctb",
 	         comment = c(affiliation = "SuiteSparse Project",
@@ -9,11 +9,15 @@ Authors@R: c(person("Kevin Michael", "Frick", role = c("aut", "cre"), email = "k
 Author: Kevin Michael Frick [aut, cre], Timothy A. Davis [ctb]
 Maintainer: Kevin Michael Frick <kmfrick@proton.me>
 Description: Provides an interface to the SuiteSparse LU factorisation routines for sparse matrices stored in compressed column format.
-License: GPL-3
+License: GPL-3 + file LICENSE
 Depends: R (>= 3.6.0)
 LinkingTo: Rcpp
 SystemRequirements: SuiteSparse (UMFPACK, AMD, SuiteSparse_config)
 Imports: Rcpp (>= 0.11.0)
+Suggests:
+    Matrix,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
 Encoding: UTF-8
 OS_type: unix
 RoxygenNote: 7.3.2
