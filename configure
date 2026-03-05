@@ -3,6 +3,10 @@
 PKG_CPPFLAGS_DEFAULT=""
 PKG_LIBS_DEFAULT=""
 have_header="no"
+multiarch_triplet=""
+have_pkg_config="no"
+pkg_config_module=""
+PKG_CONFIG_BIN="${PKG_CONFIG:-pkg-config}"
 
 PRINTF_BIN=$(command -v printf)
 SED_BIN=$(command -v sed)
@@ -12,13 +16,141 @@ if [ -z "$PRINTF_BIN" ] || [ -z "$SED_BIN" ]; then
   exit 1
 fi
 
-have_pkg_config="no"
-if command -v pkg-config >/dev/null 2>&1; then
-  if pkg-config --exists umfpack; then
-    have_pkg_config="yes"
-    PKG_CPPFLAGS_DEFAULT="$(pkg-config --cflags-only-I umfpack 2>/dev/null)"
-    PKG_LIBS_DEFAULT="$(pkg-config --libs umfpack 2>/dev/null)"
+log_configure() {
+  echo "configure: $*"
+}
+
+append_search_path() {
+  candidate="$1"
+  if [ -z "$candidate" ]; then
+    return
   fi
+  case " $search_paths " in
+    *" $candidate "*) ;;
+    *) search_paths="$search_paths $candidate" ;;
+  esac
+}
+
+strip_usr_lib() {
+  tokens="$1"
+  result=""
+  for token in $tokens; do
+    if [ "$token" = "-L/usr/lib" ]; then
+      continue
+    fi
+    if [ -z "$result" ]; then
+      result="$token"
+    else
+      result="$result $token"
+    fi
+  done
+  printf '%s\n' "$result"
+}
+
+check_umfpack_link() {
+  compiler_cmd="${CC:-cc}"
+  tmpdir=""
+  conftest_c=""
+  conftest_bin=""
+  status=0
+
+  tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/sparselu-configure.XXXXXX" 2>/dev/null)
+  if [ -z "$tmpdir" ] || [ ! -d "$tmpdir" ]; then
+    tmpdir=$(mktemp -d -t sparselu-configure 2>/dev/null)
+  fi
+  if [ -z "$tmpdir" ] || [ ! -d "$tmpdir" ]; then
+    log_configure "warning: unable to create temporary directory for UMFPACK link test; skipping test"
+    return 0
+  fi
+
+  conftest_c="$tmpdir/conftest.c"
+  conftest_bin="$tmpdir/conftest"
+
+  cat >"$conftest_c" <<'EOF'
+#if defined(__has_include)
+#  if __has_include(<suitesparse/umfpack.h>)
+#    include <suitesparse/umfpack.h>
+#  elif __has_include(<umfpack.h>)
+#    include <umfpack.h>
+#  else
+#    error "UMFPACK headers are unavailable"
+#  endif
+#else
+#  include <suitesparse/umfpack.h>
+#endif
+
+int main(void) {
+  double control[UMFPACK_CONTROL];
+  umfpack_di_defaults(control);
+  return 0;
+}
+EOF
+
+  # Intentional word splitting for compiler and flag variables.
+  # shellcheck disable=SC2086
+  $compiler_cmd $CPPFLAGS $CFLAGS $PKG_CPPFLAGS_EFFECTIVE "$conftest_c" $LDFLAGS -o "$conftest_bin" $PKG_LIBS_EFFECTIVE >/dev/null 2>&1
+  status=$?
+  rm -rf "$tmpdir"
+  return $status
+}
+
+find_umfpack_libdir() {
+  for dir in "$@"; do
+    if [ ! -d "$dir" ]; then
+      continue
+    fi
+    for lib in \
+      "$dir"/libumfpack.so \
+      "$dir"/libumfpack.so.* \
+      "$dir"/libumfpack.a \
+      "$dir"/libumfpack.dylib
+    do
+      if [ -e "$lib" ]; then
+        printf '%s\n' "$dir"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+detect_multiarch_triplet() {
+  compiler_bin=""
+  if [ -n "$CC" ]; then
+    compiler_bin=${CC%% *}
+  fi
+  if [ -n "$compiler_bin" ] && command -v "$compiler_bin" >/dev/null 2>&1; then
+    "$compiler_bin" -print-multiarch 2>/dev/null
+    return 0
+  fi
+  if command -v cc >/dev/null 2>&1; then
+    cc -print-multiarch 2>/dev/null
+    return 0
+  fi
+  return 1
+}
+
+if command -v "$PKG_CONFIG_BIN" >/dev/null 2>&1; then
+  log_configure "using pkg-config binary '$PKG_CONFIG_BIN'"
+  for module in umfpack UMFPACK; do
+    log_configure "checking pkg-config module '$module'"
+    if "$PKG_CONFIG_BIN" --exists "$module"; then
+      have_pkg_config="yes"
+      pkg_config_module="$module"
+      PKG_CPPFLAGS_DEFAULT="$("$PKG_CONFIG_BIN" --cflags-only-I "$module" 2>/dev/null)"
+      PKG_LIBS_DEFAULT="$("$PKG_CONFIG_BIN" --libs "$module" 2>/dev/null)"
+      PKG_LIBS_DEFAULT=$(strip_usr_lib "$PKG_LIBS_DEFAULT")
+      log_configure "pkg-config module '$module' found"
+      log_configure "pkg-config cflags: ${PKG_CPPFLAGS_DEFAULT:-<empty>}"
+      log_configure "pkg-config libs: ${PKG_LIBS_DEFAULT:-<empty>}"
+      break
+    fi
+  done
+  if [ "$have_pkg_config" != "yes" ]; then
+    log_configure "pkg-config modules not found: umfpack, UMFPACK"
+  fi
+else
+  log_configure "pkg-config binary '$PKG_CONFIG_BIN' was not found on PATH"
 fi
 
 if [ "$have_pkg_config" != "yes" ]; then
@@ -26,66 +158,114 @@ if [ "$have_pkg_config" != "yes" ]; then
   have_header="no"
   incdir=""
   libdir=""
+  header_file=""
+  multiarch_triplet="$(detect_multiarch_triplet)"
 
-  if [ -n "$SUITESPARSE_HOME" ]; then
-    search_paths="$search_paths $SUITESPARSE_HOME"
+  if [ -n "$multiarch_triplet" ]; then
+    log_configure "compiler multiarch triplet: $multiarch_triplet"
+  else
+    log_configure "compiler multiarch triplet not reported"
   fi
 
-  if [ -n "$PREFIX" ]; then
-    search_paths="$search_paths $PREFIX"
-  fi
+  append_search_path "$SUITESPARSE_HOME"
+  append_search_path "$PREFIX"
+  append_search_path "/usr"
+  append_search_path "/usr/local"
+  append_search_path "/opt/homebrew"
+  append_search_path "/opt/local"
 
-  search_paths="$search_paths /usr /usr/local /opt/homebrew /opt/local"
+  log_configure "manual SuiteSparse prefix search list:${search_paths}"
 
   for prefix in $search_paths; do
     if [ -z "$prefix" ]; then
       continue
     fi
+    log_configure "checking prefix '$prefix'"
     if [ -f "$prefix/include/suitesparse/umfpack.h" ]; then
       have_header="yes"
+      header_file="$prefix/include/suitesparse/umfpack.h"
       incdir="$prefix/include"
-      if [ -d "$prefix/lib" ]; then
-        libdir="$prefix/lib"
-      fi
-      break
+    elif [ -f "$prefix/include/umfpack.h" ]; then
+      have_header="yes"
+      header_file="$prefix/include/umfpack.h"
+      incdir="$prefix/include"
+    else
+      log_configure "UMFPACK header not found under '$prefix/include'"
+      continue
     fi
+    log_configure "found UMFPACK header '$header_file'"
+    extra_libdirs=""
+    for candidate in "$prefix"/lib/*-linux-gnu; do
+      if [ -d "$candidate" ]; then
+        extra_libdirs="$extra_libdirs $candidate"
+      fi
+    done
+    if [ -n "$multiarch_triplet" ]; then
+      libdir=$(find_umfpack_libdir \
+        "$prefix/lib/$multiarch_triplet" \
+        "$prefix/lib64" \
+        $extra_libdirs \
+        "$prefix/lib")
+    else
+      libdir=$(find_umfpack_libdir \
+        "$prefix/lib64" \
+        $extra_libdirs \
+        "$prefix/lib")
+    fi
+    if [ -n "$libdir" ]; then
+      log_configure "found UMFPACK library directory '$libdir'"
+    else
+      log_configure "UMFPACK library directory not found under '$prefix/lib*'"
+    fi
+    break
   done
 
   if [ "$have_header" = "yes" ]; then
-    if [ -n "$incdir" ]; then
+    if [ -n "$incdir" ] && [ "$incdir" != "/usr/include" ]; then
       if [ -z "$PKG_CPPFLAGS_DEFAULT" ]; then
         PKG_CPPFLAGS_DEFAULT="-I$incdir"
       else
         PKG_CPPFLAGS_DEFAULT="$PKG_CPPFLAGS_DEFAULT -I$incdir"
       fi
     fi
-    if [ -n "$libdir" ]; then
-      PKG_LIBS_DEFAULT="-L$libdir"
+    PKG_LIBS_DEFAULT="-lumfpack -lamd -lsuitesparseconfig"
+    # Do not force /usr/lib onto the search path; it can cause noisy linker diagnostics.
+    if [ -n "$libdir" ] && [ "$libdir" != "/usr/lib" ]; then
+      PKG_LIBS_DEFAULT="-L$libdir $PKG_LIBS_DEFAULT"
     fi
-  fi
-
-  if [ -n "$PKG_LIBS_DEFAULT" ]; then
-    PKG_LIBS_DEFAULT="$PKG_LIBS_DEFAULT -lumfpack -lamd -lsuitesparseconfig"
+    log_configure "manual fallback cflags: ${PKG_CPPFLAGS_DEFAULT:-<empty>}"
+    log_configure "manual fallback libs: ${PKG_LIBS_DEFAULT:-<empty>}"
+  else
+    log_configure "manual fallback did not find UMFPACK headers"
   fi
 fi
 
 if [ -n "$PKG_CPPFLAGS" ]; then
+  log_configure "using user-supplied PKG_CPPFLAGS override"
   PKG_CPPFLAGS_EFFECTIVE="$PKG_CPPFLAGS"
 else
   PKG_CPPFLAGS_EFFECTIVE="$PKG_CPPFLAGS_DEFAULT"
 fi
 
 if [ -n "$PKG_LIBS" ]; then
+  log_configure "using user-supplied PKG_LIBS override"
   PKG_LIBS_EFFECTIVE="$PKG_LIBS"
 else
   PKG_LIBS_EFFECTIVE="$PKG_LIBS_DEFAULT"
 fi
 
+if [ -n "$pkg_config_module" ]; then
+  log_configure "selected pkg-config module: $pkg_config_module"
+fi
+
+log_configure "final PKG_CPPFLAGS: ${PKG_CPPFLAGS_EFFECTIVE:-<empty>}"
+log_configure "final PKG_LIBS: ${PKG_LIBS_EFFECTIVE:-<empty>}"
+
 if [ -z "$PKG_LIBS_EFFECTIVE" ]; then
   cat <<EOF >&2
 configure: error: Unable to determine SuiteSparse/UMFPACK linker flags.
 Set the environment variables PKG_LIBS or SUITESPARSE_HOME before installing,
-or make sure pkg-config can find the 'umfpack' module.
+or make sure pkg-config can find the 'umfpack' or 'UMFPACK' module.
 EOF
   exit 1
 fi
@@ -96,6 +276,18 @@ configure: error: UMFPACK headers were not found. Set SUITESPARSE_HOME or PKG_CP
 EOF
   exit 1
 fi
+
+if ! check_umfpack_link; then
+  cat <<EOF >&2
+configure: error: UMFPACK compile/link test failed with the detected flags.
+configure: error: PKG_CPPFLAGS='${PKG_CPPFLAGS_EFFECTIVE:-<empty>}'
+configure: error: PKG_LIBS='${PKG_LIBS_EFFECTIVE:-<empty>}'
+Set PKG_CPPFLAGS/PKG_LIBS explicitly, or point SUITESPARSE_HOME to a valid SuiteSparse installation.
+EOF
+  exit 1
+fi
+
+log_configure "UMFPACK compile/link test succeeded"
 
 MAKEVARS_IN="src/Makevars.in"
 MAKEVARS_OUT="src/Makevars"
@@ -122,6 +314,6 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-echo "configure: created $MAKEVARS_OUT with SuiteSparse flags."
+log_configure "created $MAKEVARS_OUT with SuiteSparse flags."
 
 exit 0

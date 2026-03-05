@@ -1,4 +1,14 @@
+#ifdef __has_include
+#if __has_include(<suitesparse/umfpack.h>)
 #include <suitesparse/umfpack.h>
+#elif __has_include(<umfpack.h>)
+#include <umfpack.h>
+#else
+#error "UMFPACK headers are unavailable"
+#endif
+#else
+#include <suitesparse/umfpack.h>
+#endif
 #include <Rcpp.h>
 #include <algorithm>
 #include <vector>
