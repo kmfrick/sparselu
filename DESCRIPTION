@@ -1,7 +1,7 @@
 Package: sparselu
 Type: Package
 Title: Sparse LU Decomposition via SuiteSparse
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: c(person("Kevin Michael", "Frick", role = c("aut", "cre"), email = "kmfrick@proton.me"),
            person("Timothy A.", "Davis", role = "ctb",
 	         comment = c(affiliation = "SuiteSparse Project",
